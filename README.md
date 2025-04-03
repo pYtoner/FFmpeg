@@ -1,46 +1,70 @@
-FFmpeg README
-=============
+# FFmpeg with Subpixel Zoompan
 
-FFmpeg is a collection of libraries and tools to process multimedia content
-such as audio, video, subtitles and related metadata.
+This is a fork of FFmpeg that adds **subpixel accuracy** to the `zoompan` filter, eliminating the jittery/shaky effect when applying smooth zoom animations.
 
-## Libraries
+## What's New
 
-* `libavcodec` provides implementation of a wider range of codecs.
-* `libavformat` implements streaming protocols, container formats and basic I/O access.
-* `libavutil` includes hashers, decompressors and miscellaneous utility functions.
-* `libavfilter` provides means to alter decoded audio and video through a directed graph of connected filters.
-* `libavdevice` provides an abstraction to access capture and playback devices.
-* `libswresample` implements audio mixing and resampling routines.
-* `libswscale` implements color conversion and scaling routines.
+This fork introduces a new option to the `zoompan` filter:
 
-## Tools
+`subpixel=1`
 
-* [ffmpeg](https://ffmpeg.org/ffmpeg.html) is a command line toolbox to
-  manipulate, convert and stream multimedia content.
-* [ffplay](https://ffmpeg.org/ffplay.html) is a minimalistic multimedia player.
-* [ffprobe](https://ffmpeg.org/ffprobe.html) is a simple analysis tool to inspect
-  multimedia content.
-* Additional small tools such as `aviocat`, `ismindex` and `qt-faststart`.
+This enables **bilinear interpolation**, allowing smoother subpixel zooming and panning that isn't possible with upstream FFmpeg.
 
-## Documentation
+---
 
-The offline documentation is available in the **doc/** directory.
+## The Problem
 
-The online documentation is available in the main [website](https://ffmpeg.org)
-and in the [wiki](https://trac.ffmpeg.org).
+By default, FFmpeg's `zoompan` filter does not support subpixel precision. This causes **noticeable jitter** when zooming or panning, especially when values like `x` or `y` are set.
 
-### Examples
+This bug is [well-known and still open (#4298)](https://trac.ffmpeg.org/ticket/4298).
 
-Coding examples are available in the **doc/examples** directory.
+### ❌ Without Subpixel (Default FFmpeg)
+
+`ffmpeg -i in.png -loop 1 -vf "zoompan=z='zoom+0.05':x=50:d=150" -r 30 -t 6 -s 640x380 out_janky.mp4 -y`
+
+### ✅ With Subpixel (This Fork)
+
+`ffmpeg -i in.png -loop 1 -vf "zoompan=z='zoom+0.05':x=50:d=150:subpixel=1" -r 30 -t 6 -s 640x380 out_smooth.mp4 -y`
+
+---
+
+## Workaround Without This Patch
+
+If you're using upstream FFmpeg, the only known workaround is to **scale before** applying `zoompan`, like so:
+
+`ffmpeg -i in.png -vf "scale=hd720,zoompan=z='min(zoom+0.0015,1.4)':x=50:d=150:s=640x360" -t 6 out_workaround.mp4`
+
+This helps a bit, but it's:
+
+- Slower (especially on high-res inputs)
+- Still not truly smooth
+- More complex to chain in workflows
+
+---
+
+## ⚠️ Disclaimer
+
+This patch was mostly generated using **DeepSeek V3** and **ChatGPT-4o**, and then reviewed manually by someone with close to zero c experience. Expect bugs and undefined behaviour.
+
+---
+
+## References
+
+- [Bug Report: trac.ffmpeg.org/ticket/4298](https://trac.ffmpeg.org/ticket/4298)
+- Related SuperUser threads:
+  - https://superuser.com/q/873939
+  - https://superuser.com/q/776452
+
+---
 
 ## License
 
-FFmpeg codebase is mainly LGPL-licensed with optional components licensed under
-GPL. Please refer to the LICENSE file for detailed information.
+This fork uses the same license as upstream FFmpeg. See the `LICENSE` file for details.
+
+---
 
 ## Contributing
 
-Patches should be submitted to the ffmpeg-devel mailing list using
-`git format-patch` or `git send-email`. Github pull requests should be
-avoided because they are not part of our review process and will be ignored.
+This fork is focused on solving one issue: **subpixel zooming with `zoompan`**. PRs and issues are welcome if they directly relate to improving this functionality.
+
+For general FFmpeg contributions, see [ffmpeg.org](https://ffmpeg.org).
