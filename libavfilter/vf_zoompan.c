@@ -25,6 +25,7 @@
 #include "filters.h"
 #include "video.h"
 #include "libswscale/swscale.h"
+#include "libswscale/subpixel_scale.h"
 
 static const char *const var_names[] = {
     "in_w",   "iw",
@@ -95,6 +96,7 @@ typedef struct ZPcontext {
     int nb_frames;
     int current_frame;
     int finished;
+    int subpixel;
     AVRational framerate;
 } ZPContext;
 
@@ -108,6 +110,7 @@ static const AVOption zoompan_options[] = {
     { "d", "set the duration expression", OFFSET(duration_expr_str), AV_OPT_TYPE_STRING, {.str="90"}, .flags = FLAGS },
     { "s", "set the output image size", OFFSET(w), AV_OPT_TYPE_IMAGE_SIZE, {.str="hd720"}, .flags = FLAGS },
     { "fps", "set the output framerate", OFFSET(framerate), AV_OPT_TYPE_VIDEO_RATE, { .str = "25" }, 0, INT_MAX, .flags = FLAGS },
+    {"subpixel", "Enable subpixel-accurate zoom", OFFSET(subpixel), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, FLAGS},
     { NULL }
 };
 
@@ -199,33 +202,68 @@ static int output_single_frame(AVFilterContext *ctx, AVFrame *in, double *var_va
         return ret;
     }
 
-    px[1] = px[2] = AV_CEIL_RSHIFT(x, s->desc->log2_chroma_w);
-    px[0] = px[3] = x;
+    if (s->subpixel)
+    {
+        const uint8_t *src_planes[4] = {in->data[0], in->data[1], in->data[2], in->data[3]};
+        int src_stride[4] = {in->linesize[0], in->linesize[1], in->linesize[2], in->linesize[3]};
 
-    py[1] = py[2] = AV_CEIL_RSHIFT(y, s->desc->log2_chroma_h);
-    py[0] = py[3] = y;
+        uint8_t *dst_planes[4] = {out->data[0], out->data[1], out->data[2], out->data[3]};
+        int dst_stride[4] = {out->linesize[0], out->linesize[1], out->linesize[2], out->linesize[3]};
 
-    s->sws = sws_alloc_context();
-    if (!s->sws) {
-        ret = AVERROR(ENOMEM);
-        goto error;
+        float crop_w = in->width / *zoom;
+        float crop_h = in->height / *zoom;
+
+        int fmt = in->format;
+
+        ret = sws_scale_fp_planar(
+            src_planes, src_stride,
+            in->width, in->height,
+            *dx, *dy, crop_w, crop_h,
+            dst_planes, dst_stride,
+            out->width, out->height,
+            fmt);
+
+        if (ret < 0)
+        {
+            av_log(ctx, AV_LOG_ERROR, "subpixel scaler failed\n");
+            av_frame_free(&out);
+            return ret;
+        }
     }
+    else
+    {
+        px[1] = px[2] = AV_CEIL_RSHIFT(x, s->desc->log2_chroma_w);
+        px[0] = px[3] = x;
 
-    for (k = 0; in->data[k]; k++)
-        input[k] = in->data[k] + py[k] * in->linesize[k] + px[k];
+        py[1] = py[2] = AV_CEIL_RSHIFT(y, s->desc->log2_chroma_h);
+        py[0] = py[3] = y;
 
-    av_opt_set_int(s->sws, "srcw", w, 0);
-    av_opt_set_int(s->sws, "srch", h, 0);
-    av_opt_set_int(s->sws, "src_format", in->format, 0);
-    av_opt_set_int(s->sws, "dstw", outlink->w, 0);
-    av_opt_set_int(s->sws, "dsth", outlink->h, 0);
-    av_opt_set_int(s->sws, "dst_format", outlink->format, 0);
-    av_opt_set_int(s->sws, "sws_flags", SWS_BICUBIC, 0);
+        if (s->sws)
+            sws_freeContext(s->sws);
 
-    if ((ret = sws_init_context(s->sws, NULL, NULL)) < 0)
-        goto error;
+        s->sws = sws_alloc_context();
+        if (!s->sws)
+        {
+            ret = AVERROR(ENOMEM);
+            goto error;
+        }
 
-    sws_scale(s->sws, (const uint8_t *const *)&input, in->linesize, 0, h, out->data, out->linesize);
+        for (k = 0; in->data[k]; k++)
+            input[k] = in->data[k] + py[k] * in->linesize[k] + px[k];
+
+        av_opt_set_int(s->sws, "srcw", w, 0);
+        av_opt_set_int(s->sws, "srch", h, 0);
+        av_opt_set_int(s->sws, "src_format", in->format, 0);
+        av_opt_set_int(s->sws, "dstw", outlink->w, 0);
+        av_opt_set_int(s->sws, "dsth", outlink->h, 0);
+        av_opt_set_int(s->sws, "dst_format", outlink->format, 0);
+        av_opt_set_int(s->sws, "sws_flags", SWS_BICUBIC, 0);
+
+        if ((ret = sws_init_context(s->sws, NULL, NULL)) < 0)
+            goto error;
+
+        sws_scale(s->sws, (const uint8_t *const *)&input, in->linesize, 0, h, out->data, out->linesize);
+    }
 
     out->pts = pts;
     s->frame_count++;

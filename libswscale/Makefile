@@ -25,6 +25,7 @@ OBJS = alphablend.o                                     \
        version.o                                        \
        yuv2rgb.o                                        \
        vscale.o                                         \
+       subpixel_scale.o                                 \
 
 # Objects duplicated from other libraries for shared builds
 SHLIBOBJS                    += log2_tab.o half2float.o
