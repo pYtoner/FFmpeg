@@ -52,7 +52,7 @@ This patch was mostly generated using **DeepSeek V3** and **ChatGPT-4o**, and th
 
 - [Bug Report: trac.ffmpeg.org/ticket/4298](https://trac.ffmpeg.org/ticket/4298)
 - Related SuperUser threads:
-  - https://superuser.com/q/873939
+  - https://superuser.com/q/1112617
   - https://superuser.com/q/776452
 
 ---
